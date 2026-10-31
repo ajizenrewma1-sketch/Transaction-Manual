@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
@@ -16,6 +16,9 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-2.5-flash"
 
 def generate_with_retry(model, contents, max_retries=3, initial_delay=3):
+    """
+    ฟังก์ชันช่วยลองส่งคำขอซ้ำอัตโนมัติเมื่อติดโควตา (429 Rate Limit)
+    """
     delay = initial_delay
     for attempt in range(max_retries):
         try:
@@ -31,12 +34,6 @@ def generate_with_retry(model, contents, max_retries=3, initial_delay=3):
                 delay *= 2
             else:
                 raise e
-
-# ดึง index.html จากโฟลเดอร์หลัก (ถอยหลังออกจากโฟลเดอร์ api มา 1 ชั้น)
-@app.route('/')
-def index():
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    return send_from_directory(root_dir, 'index.html')
 
 @app.route('/api/ocr', methods=['POST'])
 def ocr_handler():
