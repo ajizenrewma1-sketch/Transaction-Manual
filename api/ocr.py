@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import requests
@@ -10,18 +9,18 @@ app = Flask(__name__)
 @app.route('/api/ocr', methods=['POST'])
 def ocr_handler():
   try:
-    api_key = os.environ.get('GEMINI_API_KEY')
-    # ดึงไฟล์ภาพจาก Request
-    file = request.files.get('file')
-    if not file:
+    # 1. รับข้อมูล JSON ที่ส่งมาจากหน้าเว็บ (base64)
+    req_data = request.get_json() or {}
+    base64_image = req_data.get('image')
+    mime_type = req_data.get('mimeType', 'image/jpeg')
+
+    if not base64_image:
       return jsonify({'error': 'No file uploaded'}), 400
 
-    image_bytes = file.read()
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    api_key = os.environ.get('GEMINI_API_KEY', '')
 
-    # กำหนด URL และ Payload สำหรับ Gemini 1.5 Flash
-    url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
-
+    # 2. ตั้งค่า Endpoint ของโมเดล
+    url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
     headers = {'Content-Type': 'application/json'}
 
     payload = {
@@ -29,33 +28,53 @@ def ocr_handler():
             'parts': [
                 {
                     'text': (
-                        'Extract all relevant OCR receipt data into JSON'
-                        ' format.'
+                        'คุณคือผู้เชี่ยวชาญการอ่านสลิปใบเสร็จ M-Flow'
+                        ' ให้สกัดข้อมูลออกมาเป็น JSON เท่านั้น โดยมีฟิลด์ดังนี้:'
+                        ' platePrefix (หมวดอักษร), plateNumber (เลขทะเบียน),'
+                        ' province (จังหวัด), plaza (ชื่อด่าน), refTripId'
+                        ' (รหัส Ref), date (DD/MM/YYYY ค.ศ.), timeHm (HH:MM),'
+                        ' seconds (วินาที), highway (สายทาง), lane (ช่องทาง).'
                     )
                 },
                 {
                     'inline_data': {
-                        'mime_type': file.content_type or 'image/jpeg',
+                        'mime_type': mime_type,
                         'data': base64_image,
                     }
                 },
             ]
-        }]
+        }],
+        'generationConfig': {'response_mime_type': 'application/json'},
     }
 
-    # ตรวจสอบประเภท คีย์
+    # 3. จัดการ Token แบบ AQ... หรือ API Key แบบปกติ
     if api_key.startswith('AQ.'):
-      # กรณีเป็น Token แบบ AQ... ส่งผ่าน Authorization Header
       headers['Authorization'] = f'Bearer {api_key}'
       response = requests.post(url, headers=headers, json=payload)
-    else:
-      # กรณีเป็น API Key แบบ AIza... ส่งผ่าน Query Param
+    elif api_key:
       response = requests.post(
           f'{url}?key={api_key}', headers=headers, json=payload
       )
+    else:
+      response = requests.post(url, headers=headers, json=payload)
+
+    if not response.ok:
+      return jsonify({'error': f'Gemini API Error: {response.text}'}), response.status_code
 
     res_data = response.json()
-    return jsonify(res_data)
+
+    # 4. แกะข้อมูล JSON ที่ Gemini ตอบกลับมา
+    try:
+      candidate = res_data['candidates'][0]['content']['parts'][0]['text']
+      if '```json' in candidate:
+        candidate = candidate.split('```json')[1].split('```')[0].strip()
+      elif '```' in candidate:
+        candidate = candidate.split('```')[1].split('```')[0].strip()
+
+      parsed_json = json.loads(candidate)
+      return jsonify(parsed_json)
+    except Exception:
+      return jsonify(res_data)
 
   except Exception as e:
     return jsonify({'error': str(e)}), 500
