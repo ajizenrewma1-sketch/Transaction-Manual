@@ -37,6 +37,11 @@ def generate_with_retry(model, contents, max_retries=3, initial_delay=3):
             else:
                 raise e  # ถ้าเป็น Error ประเภทอื่นที่ไม่ใช่ 429 ให้หยุดทันที
 
+# เพิ่ม Route หน้าแรก เพื่อป้องกันปัญหา 404 Not Found เวลาเปิดลิงก์หลัก
+@app.route('/')
+def home():
+    return "M-Flow OCR API Backend is running successfully!"
+
 @app.route('/api/ocr', methods=['POST'])
 def ocr_handler():
     try:
