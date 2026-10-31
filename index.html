@@ -414,72 +414,35 @@
             const badge = document.getElementById('statusBadge');
 
             loader.classList.remove('hidden');
-            badge.textContent = 'กำลังอ่านข้อมูลจากภาพ...';
+            badge.textContent = 'กำลังส่งรูปให้หลังบ้านประมวลผล...';
             badge.className = 'text-xs px-3 py-1 bg-amber-100 text-amber-800 rounded-full font-semibold';
 
-            const systemPrompt = `อ่านข้อมูลจากภาพหน้าจอระบบตรวจสอบรายการผ่านทาง แล้วส่งกลับเป็น JSON ตามฟิลด์ต่อไปนี้:
-- platePrefix: หมวดอักษร (เช่น "3ฒล")
-- plateNumber: เลขทะเบียน (เช่น "2850")
-- province: จังหวัด (เช่น "กรุงเทพมหานคร")
-- plaza: ด่าน (เช่น "ทับช้าง 1", "ทับช้าง 2", "ธัญบุรี 1", "ธัญบุรี 2")
-- refTripId: Ref Trip Id (เช่น "543212026102900075951074921616A")
-- date: วันที่ผ่านทาง (เช่น "29/10/2026")
-- timeHm: ชั่วโมง-นาทีผ่านทาง (เช่น "00:07")
-- seconds: วินาทีเริ่มต้น (เช่น "59")
-- highway: สายทาง
-- lane: ช่องทาง`;
-
-            const payload = {
-                contents: [{
-                    role: "user",
-                    parts: [
-                        { text: systemPrompt },
-                        {
-                            inlineData: {
-                                mimeType: mimeType || "image/png",
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            platePrefix: { type: "STRING" },
-                            plateNumber: { type: "STRING" },
-                            province: { type: "STRING" },
-                            plaza: { type: "STRING" },
-                            refTripId: { type: "STRING" },
-                            date: { type: "STRING" },
-                            timeHm: { type: "STRING" },
-                            seconds: { type: "STRING" },
-                            highway: { type: "STRING" },
-                            lane: { type: "STRING" }
-                        },
-                        propertyOrdering: [
-                            "platePrefix", "plateNumber", "province",
-                            "plaza", "refTripId", "date", "timeHm", "seconds",
-                            "highway", "lane"
-                        ]
-                    }
-                }
-            };
-
             try {
-                const responseJson = await executeGeminiCall(payload);
-                const rawText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!rawText) throw new Error("Empty OCR response");
+                // ส่งภาพไปยัง Flask Backend (/api/ocr) บน Vercel
+                const response = await fetch('/api/ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image: base64Image,
+                        mimeType: mimeType || 'image/png'
+                    })
+                });
 
-                const parsed = JSON.parse(rawText);
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || `Server error: ${response.status}`);
+                }
+
+                const parsed = await response.json();
                 populateRecord(parsed, "แกะข้อมูลสำเร็จ");
                 notify('แกะข้อมูลทั้ง 10 ช่องเรียบร้อยแล้ว!', 'success');
             } catch (err) {
                 console.error(err);
                 badge.textContent = 'อ่านภาพไม่สำเร็จ';
                 badge.className = 'text-xs px-3 py-1 bg-rose-100 text-rose-700 rounded-full font-semibold';
-                notify('ไม่สามารถแกะข้อมูลได้ กรุณาลองวางภาพใหม่อีกครั้ง', 'error');
+                notify('เกิดข้อผิดพลาด: ' + err.message, 'error');
             } finally {
                 loader.classList.add('hidden');
             }
